@@ -22,7 +22,7 @@
 #include <strings.h>
 #include <string.h>
 #include <sys/stat.h>
-#include <pthread.h>
+//#include <pthread.h>
 #include <sys/wait.h>
 #include <stdlib.h>
 #include <stdint.h>
@@ -54,7 +54,8 @@ void unimplemented(int);
 /**********************************************************************/
 void accept_request(void *arg)
 {
-    int client = (intptr_t)arg;
+    int client = (int)*((int*)arg);//(intptr_t)arg;
+    printf("accept_request client: %d\n", client);
     char buf[1024];
     size_t numchars;
     char method[255];
@@ -67,6 +68,8 @@ void accept_request(void *arg)
     char *query_string = NULL;
 
     numchars = get_line(client, buf, sizeof(buf));
+    printf("numchars: %d, buf: %s\n", numchars, buf);
+
     i = 0; j = 0;
     while (!ISspace(buf[i]) && (i < sizeof(method) - 1))
     {
@@ -75,7 +78,7 @@ void accept_request(void *arg)
     }
     j=i;
     method[i] = '\0';
-
+    printf("method: %s\n", method);
     if (strcasecmp(method, "GET") && strcasecmp(method, "POST"))
     {
         unimplemented(client);
@@ -94,6 +97,7 @@ void accept_request(void *arg)
         i++; j++;
     }
     url[i] = '\0';
+    printf("url = %s\n", url);
 
     if (strcasecmp(method, "GET") == 0)
     {
@@ -112,8 +116,10 @@ void accept_request(void *arg)
     if (path[strlen(path) - 1] == '/')
         strcat(path, "index.html");
     if (stat(path, &st) == -1) {
-        while ((numchars > 0) && strcmp("\n", buf))  /* read & discard headers */
+        while ((numchars > 0) && strcmp("\n", buf))  {/* read & discard headers */
             numchars = get_line(client, buf, sizeof(buf));
+            printf("numchars: %d, buf: %s\n", numchars, buf);
+        }
         not_found(client);
     }
     else
@@ -320,6 +326,8 @@ int get_line(int sock, char *buf, int size)
     while ((i < size - 1) && (c != '\n'))
     {
         n = recv(sock, &c, 1, 0);
+//        printf("%d %d\n", n,c);
+
         /* DEBUG printf("%02X\n", c); */
         if (n > 0)
         {
@@ -355,10 +363,14 @@ void headers(int client, const char *filename)
 
     strcpy(buf, "HTTP/1.0 200 OK\r\n");
     send(client, buf, strlen(buf), 0);
-    strcpy(buf, SERVER_STRING);
-    send(client, buf, strlen(buf), 0);
+//    return;
+//    strcpy(buf, SERVER_STRING);
+//    send(client, buf, strlen(buf), 0);
+
     sprintf(buf, "Content-Type: text/html\r\n");
     send(client, buf, strlen(buf), 0);
+
+    // must set it
     strcpy(buf, "\r\n");
     send(client, buf, strlen(buf), 0);
 }
@@ -399,14 +411,16 @@ void not_found(int client)
 /**********************************************************************/
 void serve_file(int client, const char *filename)
 {
+    printf("serve_file: %s\n", filename);
     FILE *resource = NULL;
     int numchars = 1;
     char buf[1024];
 
     buf[0] = 'A'; buf[1] = '\0';
-    while ((numchars > 0) && strcmp("\n", buf))  /* read & discard headers */
+    while ((numchars > 0) && strcmp("\n", buf)){  /* read & discard headers */
         numchars = get_line(client, buf, sizeof(buf));
-
+        printf("numchars: %d, buf: %s", numchars, buf);
+    }
     resource = fopen(filename, "r");
     if (resource == NULL)
         not_found(client);
@@ -439,8 +453,8 @@ int startup(u_short *port)
     name.sin_family = AF_INET;
     name.sin_port = htons(*port);
     name.sin_addr.s_addr = htonl(INADDR_ANY);
-    if ((setsockopt(httpd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on))) < 0)  
-    {  
+    if ((setsockopt(httpd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on))) < 0)
+    {
         error_die("setsockopt failed");
     }
     if (bind(httpd, (struct sockaddr *)&name, sizeof(name)) < 0)
@@ -465,7 +479,7 @@ int startup(u_short *port)
 void unimplemented(int client)
 {
     char buf[1024];
-
+    printf("get\n");
     sprintf(buf, "HTTP/1.0 501 Method Not Implemented\r\n");
     send(client, buf, strlen(buf), 0);
     sprintf(buf, SERVER_STRING);
@@ -489,11 +503,11 @@ void unimplemented(int client)
 int main(void)
 {
     int server_sock = -1;
-    u_short port = 4000;
+    u_short port = 40000;
     int client_sock = -1;
     struct sockaddr_in client_name;
     socklen_t  client_name_len = sizeof(client_name);
-    pthread_t newthread;
+//    pthread_t newthread;
 
     server_sock = startup(&port);
     printf("httpd running on port %d\n", port);
@@ -503,11 +517,12 @@ int main(void)
         client_sock = accept(server_sock,
                 (struct sockaddr *)&client_name,
                 &client_name_len);
+        printf("client_sock = %d\n", client_sock);
         if (client_sock == -1)
             error_die("accept");
-        /* accept_request(&client_sock); */
-        if (pthread_create(&newthread , NULL, (void *)accept_request, (void *)(intptr_t)client_sock) != 0)
-            perror("pthread_create");
+         accept_request(&client_sock);
+//        if (pthread_create(&newthread , NULL, (void *)accept_request, (void *)(intptr_t)client_sock) != 0)
+//            perror("pthread_create");
     }
 
     close(server_sock);
